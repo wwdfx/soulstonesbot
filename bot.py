@@ -2,7 +2,7 @@ import logging
 import sqlite3
 import random
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 from datetime import datetime, timedelta, timezone
 import asyncio
 
@@ -410,8 +410,49 @@ async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     new_balance = set_balance(int(target_user_id), amount)
     await update.message.reply_text(f"Баланс пользователя {target_user_id} установлен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
 
+# Conversation states
+PROMOTE_USER_ID = range(1)
+
+# Function to handle /promote command (super admin only)
+async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    super_admin_id = 6505061807  # Replace with your actual super admin ID
+    user_id = update.message.from_user.id
+
+    if user_id != super_admin_id:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Пожалуйста, введите user_id аккаунта, который вы хотите повысить до администратора.")
+    return PROMOTE_USER_ID
+
+# Function to receive the user ID to promote
+async def receive_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        target_user_id = int(update.message.text)
+    except ValueError:
+        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        return PROMOTE_USER_ID
+
+    set_user_role(target_user_id, 'admin')
+    await update.message.reply_text(f"Пользователь {target_user_id} повышен до администратора.")
+    return ConversationHandler.END
+
+# Function to cancel the conversation
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отменено.")
+    return ConversationHandler.END
+
 # Initialize the bot and add handlers
 app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
+
+# Conversation handler for promoting a user to admin
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler('promote', promote_command)],
+    states={
+        PROMOTE_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_user_id)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+)
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 app.add_handler(CommandHandler("balance", balance_command))
@@ -421,6 +462,7 @@ app.add_handler(CommandHandler("rockpaperscissors", rockpaperscissors_command))
 app.add_handler(CommandHandler("addbalance", add_balance_command))
 app.add_handler(CommandHandler("subbalance", sub_balance_command))
 app.add_handler(CommandHandler("setbalance", set_balance_command))
+app.add_handler(conv_handler)
 app.add_handler(CallbackQueryHandler(bet_callback, pattern='^bet_'))
 app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
 
