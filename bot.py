@@ -1,7 +1,7 @@
 import logging
 import sqlite3
 import random
-from telegram import Update, ParseMode, InputFile
+from telegram import Update, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from datetime import datetime, timedelta
 import asyncio
@@ -159,8 +159,10 @@ async def reading_command(update: Update, context):
     else:
         await update.message.reply_text(f"💎 {mention_text}, вы уже запросили прогноз сегодня. Пожалуйста, подождите до завтра.")
 
-app = ApplicationBuilder().token("7374196189:AAH5nebr7bg8fVHCSm5uSGhT646sNZJ6nfEa").build()
+app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 app.add_handler(CommandHandler("balance", balance_command))
 app.add_handler(CommandHandler("reading", reading_command))
 app.run_polling()
+
+#Test bot API token: 7374196189:AAH5nebr7bg8fVHCSm5uSGhT646sNZJ6nfEa
