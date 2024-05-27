@@ -523,7 +523,10 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Create buttons for each mission
     buttons = [
-        InlineKeyboardButton(f"{mission['name']} ({mission['reward']} камней душ)", callback_data=f"mission_{mission['reward']}_{mission['length']}_{mission['name']}")
+        InlineKeyboardButton(
+            f"{mission['name']} ({mission['reward']} камней душ)",
+            callback_data=f"mission_{mission['id']}"
+        )
         for mission in missions
     ]
     keyboard = InlineKeyboardMarkup.from_column(buttons)
