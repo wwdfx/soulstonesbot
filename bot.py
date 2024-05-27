@@ -102,6 +102,21 @@ missions = [
 cur.executemany('INSERT INTO missions (name, rarity, appearing_rate, length, reward) VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING', missions)
 conn.commit()
 
+# Image paths
+image_paths = {
+    1: './check1.png',
+    2: './check2.png',
+    3: './check3.png',
+    4: './check4.png',
+    5: './check5.png',
+    6: './check6.png',
+    7: './check7.png',
+    'loss': './lossStreak.png'
+}
+
+# Conversation states
+PROMOTE_USER_ID = range(1)
+
 # Function to retrieve balance
 def get_balance(user_id):
     cur.execute('SELECT balance FROM balances WHERE user_id = %s', (user_id,))
@@ -164,18 +179,6 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
     balance = get_balance(user_id)
     await update.message.reply_text(f"💎 {mention_text}, ваш текущий баланс: {balance}💎.")
-
-# Image paths
-image_paths = {
-    1: './check1.png',
-    2: './check2.png',
-    3: './check3.png',
-    4: './check4.png',
-    5: './check5.png',
-    6: './check6.png',
-    7: './check7.png',
-    'loss': './lossStreak.png'
-}
 
 # Function to handle the /checkin command
 async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -459,9 +462,6 @@ async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     new_balance = set_balance(int(target_user_id), amount)
     await update.message.reply_text(f"Баланс пользователя {target_user_id} установлен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
 
-# Conversation states
-PROMOTE_USER_ID = range(1)
-
 # Function to handle /promote command (super admin only)
 async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     super_admin_id = 6505061807  # Replace with your actual super admin ID
@@ -514,7 +514,7 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     attempts = result['attempts'] if result else 0
 
     if attempts >= 3:
-        await update.message.reply_text("Вы уже отправили 3 отряда на миссии сегодня. Повторите попытку завтра.")
+        await update.message.reply_text("✨ Вы уже отправили 3 отряда на миссии сегодня. ⌛️ Повторите попытку завтра. ")
         return
 
     # Generate 5 random missions based on appearance rates
@@ -523,13 +523,13 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create buttons for each mission
     buttons = [
         InlineKeyboardButton(
-            f"{mission['name']} ({mission['reward']} камней душ)",
+            f"{mission['name']} ({mission['reward']} 💎 камней душ)",
             callback_data=f"mission_{mission['id']}"
         )
         for mission in missions
     ]
     keyboard = InlineKeyboardMarkup.from_column(buttons)
-    await update.message.reply_text("Выберите миссию для отправки отряда:", reply_markup=keyboard)
+    await update.message.reply_text("⚔️ Выберите миссию для отправки отряда:", reply_markup=keyboard)
 
 # Callback function for mission buttons
 async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -553,7 +553,7 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     attempts = result['attempts'] if result else 0
 
     if attempts >= 3:
-        await query.edit_message_text("Вы уже отправили 3 отряда на миссии сегодня. Повторите попытку завтра.")
+        await query.edit_message_text("✨ Вы уже отправили 3 отряда на миссии сегодня. ⌛️ Повторите попытку завтра. ")
         return
 
     # Increment the number of attempts for today
@@ -571,7 +571,7 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.execute('INSERT INTO user_missions (user_id, mission_id, start_time, end_time) VALUES (%s, %s, %s, %s)', (user_id, mission_id, start_time, end_time))
     conn.commit()
 
-    await query.edit_message_text(f"Вы отправили отряд на миссию: {mission['name']}. Время завершения: {end_time.strftime('%Y-%m-%d %H:%M:%S')}.")
+    await query.edit_message_text(f"💼 Вы отправили отряд на миссию: ✨{mission['name']}✨.  🌒 Время завершения: ⌛️ {end_time.strftime('%Y-%m-%d %H:%M:%S')} ⌛️.")
 
 # Function to check for completed missions
 async def check_missions(context: ContextTypes.DEFAULT_TYPE):
@@ -585,7 +585,7 @@ async def check_missions(context: ContextTypes.DEFAULT_TYPE):
         reward = cur.fetchone()['reward']
         update_balance(user_id, reward)
         cur.execute('UPDATE user_missions SET completed = TRUE WHERE user_id = %s AND mission_id = %s', (user_id, mission_id))
-        await context.bot.send_message(chat_id=user_id, text=f"Ваша миссия завершена! Вы получили {reward} Камней душ.")
+        await context.bot.send_message(chat_id=user_id, text=f"✅ Ваша миссия завершена! ✅ Вы получили {reward} 💎 Камней душ.")
     conn.commit()
 
 # Initialize the bot and add handlers
