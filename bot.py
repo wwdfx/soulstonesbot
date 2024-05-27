@@ -18,7 +18,7 @@ conn = psycopg2.connect(
     user=os.getenv("koyeb-adm"),
     password=os.getenv("WCAFr1R0muaZ"),
     host=os.getenv("ep-shy-pine-a2e1ouuw.eu-central-1.pg.koyeb.app"),
-    port=os.getenv("5432")
+    port=os.getenv(5432)
 )
 conn.autocommit = True
 cur = conn.cursor(cursor_factory=DictCursor)
