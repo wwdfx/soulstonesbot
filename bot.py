@@ -222,7 +222,7 @@ def can_request_reading(user_id):
     conn.commit()
     return True
 
-app = ApplicationBuilder().token("7374196189:AAH5nebr7bg8fVHCSm5uSGhT646sNZJ6nfE").build()
+app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 app.add_handler(CommandHandler("balance", balance_command))
 app.add_handler(CommandHandler("checkin", checkin_command))
