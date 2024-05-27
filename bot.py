@@ -189,15 +189,14 @@ async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if result:
         streak, last_checkin = result['streak'], result['last_checkin']
-        last_checkin_date = datetime.strptime(last_checkin, '%Y-%m-%d %H:%M:%S')
 
         # Check if the user has already checked in today
-        if today.date() == last_checkin_date.date():
+        if today.date() == last_checkin.date():
             await update.message.reply_text("Вы уже получали награду за вход сегодня. Повторите попытку завтра.")
             return
 
         # Check if the streak is broken
-        if today - last_checkin_date > timedelta(days=1):
+        if today - last_checkin > timedelta(days=1):
             streak = 1
             reward = 25
             image_path = image_paths['loss']
@@ -216,7 +215,7 @@ async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_photo(photo=open(image_path, 'rb'), caption=f"Вы выполнили ежедневный вход 1 день подряд и получили 25 Камней душ!")
 
     # Update the last check-in date and streak
-    cur.execute('INSERT INTO checkin_streak (user_id, streak, last_checkin) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET streak = %s, last_checkin = %s', (user_id, streak, today.strftime('%Y-%m-%d %H:%M:%S'), streak, today.strftime('%Y-%m-%d %H:%M:%S')))
+    cur.execute('INSERT INTO checkin_streak (user_id, streak, last_checkin) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET streak = %s, last_checkin = %s', (user_id, streak, today, streak, today))
     conn.commit()
 
     new_balance = update_balance(user_id, reward)
