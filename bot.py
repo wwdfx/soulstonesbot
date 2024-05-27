@@ -1,8 +1,8 @@
 import logging
 import sqlite3
 import random
-from telegram import Update, InputFile
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from datetime import datetime, timedelta, timezone
 import asyncio
 
@@ -36,6 +36,14 @@ c.execute('''
         last_checkin TIMESTAMP
     )
 ''')
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS last_game (
+        user_id INTEGER PRIMARY KEY,
+        last_play TIMESTAMP
+    )
+''')
+
 conn.commit()
 
 # Function to retrieve balance
@@ -52,8 +60,8 @@ def update_balance(user_id, amount):
     conn.commit()
     return new_balance
 
-# Define a function to handle messages
-async def message_handler(update: Update, context):
+# Function to handle messages
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
     target_group_id = -1002142915618  # Adjust this ID to your target group
 
@@ -66,8 +74,8 @@ async def message_handler(update: Update, context):
         new_balance = update_balance(user_id, 5)
         await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +5 к камням душ. Текущий баланс: {new_balance}💎.")
 
-# Define a function to handle the /balance command
-async def balance_command(update: Update, context):
+# Function to handle /balance command
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_mention = update.message.from_user.username or update.message.from_user.first_name
     mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
@@ -86,8 +94,8 @@ image_paths = {
     'loss': './lossStreak.png'
 }
 
-# Define a function to handle the /check-in command
-async def checkin_command(update: Update, context):
+# Function to handle the /check-in command
+async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     today = datetime.now()
     c.execute('SELECT streak, last_checkin FROM checkin_streak WHERE user_id = ?', (user_id,))
@@ -193,8 +201,8 @@ readings = [
     "Твоя связь с парабатай обеспечит силу и ясность."
 ]
 
-# Define a function to handle the /reading command
-async def reading_command(update: Update, context):
+# Function to handle the /reading command
+async def reading_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if not can_request_reading(user_id):
         await update.message.reply_text("Вы уже запросили гадание сегодня. Повторите попытку завтра.")
@@ -222,9 +230,93 @@ def can_request_reading(user_id):
     conn.commit()
     return True
 
+# Define a function to handle the /rockpaperscissors command
+async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    c.execute('SELECT last_play FROM last_game WHERE user_id = ?', (user_id,))
+    result = c.fetchone()
+    now = datetime.now()
+
+    if result:
+        last_play = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
+        if now - last_play < timedelta(minutes=10):
+            await update.message.reply_text("Вы можете играть только раз в 10 минут. Попробуйте позже.")
+            return
+
+    buttons = [
+        InlineKeyboardButton("25", callback_data="bet_25"),
+        InlineKeyboardButton("50", callback_data="bet_50"),
+        InlineKeyboardButton("100", callback_data="bet_100"),
+        InlineKeyboardButton("200", callback_data="bet_200"),
+        InlineKeyboardButton("500", callback_data="bet_500")
+    ]
+    keyboard = InlineKeyboardMarkup.from_column(buttons)
+    await update.message.reply_text("Выберите количество Камней душ, которые вы хотите поставить:", reply_markup=keyboard)
+
+async def bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    bet = int(query.data.split('_')[1])
+    balance = get_balance(user_id)
+
+    if balance < bet:
+        await query.edit_message_text("У вас недостаточно Камней душ для этой ставки.")
+        return
+
+    buttons = [
+        InlineKeyboardButton("🪨", callback_data=f"play_{bet}_rock"),
+        InlineKeyboardButton("📄", callback_data=f"play_{bet}_paper"),
+        InlineKeyboardButton("✂️", callback_data=f"play_{bet}_scissors")
+    ]
+    keyboard = InlineKeyboardMarkup.from_row(buttons)
+    await query.edit_message_text("Выберите, что вы хотите выбросить:", reply_markup=keyboard)
+
+async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    bet, user_choice = query.data.split('_')[1:]
+    bet = int(bet)
+    choices = ['rock', 'paper', 'scissors']
+    bot_choice = random.choice(choices)
+
+    outcomes = {
+        ('rock', 'scissors'): "win",
+        ('rock', 'paper'): "lose",
+        ('paper', 'rock'): "win",
+        ('paper', 'scissors'): "lose",
+        ('scissors', 'paper'): "win",
+        ('scissors', 'rock'): "lose"
+    }
+
+    if user_choice == bot_choice:
+        result = "draw"
+    else:
+        result = outcomes.get((user_choice, bot_choice))
+
+    if result == "win":
+        new_balance = update_balance(user_id, bet)
+        await query.edit_message_text(f"Поздравляем! Вы выиграли {bet} Камней душ. Ваш текущий баланс: {new_balance}💎.")
+    elif result == "lose":
+        new_balance = update_balance(user_id, -bet)
+        await query.edit_message_text(f"Вы проиграли {bet} Камней душ. Ваш текущий баланс: {new_balance}💎.")
+    else:
+        await query.edit_message_text(f"Ничья! Ваш баланс остался прежним: {get_balance(user_id)}💎.")
+
+    # Update the last play time
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    c.execute('REPLACE INTO last_game (user_id, last_play) VALUES (?, ?)', (user_id, now))
+    conn.commit()
+
 app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
+
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 app.add_handler(CommandHandler("balance", balance_command))
 app.add_handler(CommandHandler("checkin", checkin_command))
 app.add_handler(CommandHandler("reading", reading_command))
+app.add_handler(CommandHandler("rockpaperscissors", rockpaperscissors_command))
+app.add_handler(CallbackQueryHandler(bet_callback, pattern='^bet_'))
+app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
+
 app.run_polling()
