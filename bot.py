@@ -23,6 +23,13 @@ c.execute('''
 ''')
 
 c.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        role TEXT NOT NULL DEFAULT 'user'
+    )
+''')
+
+c.execute('''
     CREATE TABLE IF NOT EXISTS last_reading (
         user_id INTEGER PRIMARY KEY,
         last_request TIMESTAMP
@@ -59,6 +66,33 @@ def update_balance(user_id, amount):
     c.execute('REPLACE INTO balances (user_id, balance) VALUES (?, ?)', (user_id, new_balance))
     conn.commit()
     return new_balance
+
+# Function to reduce balance
+def reduce_balance(user_id, amount):
+    current_balance = get_balance(user_id)
+    if current_balance < amount:
+        return None  # Not enough balance
+    new_balance = current_balance - amount
+    c.execute('REPLACE INTO balances (user_id, balance) VALUES (?, ?)', (user_id, new_balance))
+    conn.commit()
+    return new_balance
+
+# Function to set balance
+def set_balance(user_id, amount):
+    c.execute('REPLACE INTO balances (user_id, balance) VALUES (?, ?)', (user_id, amount))
+    conn.commit()
+    return amount
+
+# Function to get user role
+def get_user_role(user_id):
+    c.execute('SELECT role FROM users WHERE user_id = ?', (user_id,))
+    result = c.fetchone()
+    return result[0] if result else 'user'
+
+# Function to set user role
+def set_user_role(user_id, role):
+    c.execute('REPLACE INTO users (user_id, role) VALUES (?, ?)', (user_id, role))
+    conn.commit()
 
 # Function to handle messages
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -309,6 +343,74 @@ async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute('REPLACE INTO last_game (user_id, last_play) VALUES (?, ?)', (user_id, now))
     conn.commit()
 
+# Function to handle /addbalance command (admin only)
+async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if get_user_role(user_id) != 'admin':
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text("Использование: /addbalance <user_id> <amount>")
+        return
+
+    target_user_id, amount = context.args
+    try:
+        amount = int(amount)
+    except ValueError:
+        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        return
+
+    new_balance = update_balance(int(target_user_id), amount)
+    await update.message.reply_text(f"Баланс пользователя {target_user_id} увеличен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
+
+# Function to handle /subbalance command (admin only)
+async def sub_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if get_user_role(user_id) != 'admin':
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text("Использование: /subbalance <user_id> <amount>")
+        return
+
+    target_user_id, amount = context.args
+    try:
+        amount = int(amount)
+    except ValueError:
+        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        return
+
+    new_balance = reduce_balance(int(target_user_id), amount)
+    if new_balance is None:
+        await update.message.reply_text("Недостаточно Камней душ для выполнения операции.")
+        return
+
+    await update.message.reply_text(f"Баланс пользователя {target_user_id} уменьшен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
+
+# Function to handle /setbalance command (admin only)
+async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if get_user_role(user_id) != 'admin':
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text("Использование: /setbalance <user_id> <amount>")
+        return
+
+    target_user_id, amount = context.args
+    try:
+        amount = int(amount)
+    except ValueError:
+        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        return
+
+    new_balance = set_balance(int(target_user_id), amount)
+    await update.message.reply_text(f"Баланс пользователя {target_user_id} установлен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
+
+# Initialize the bot and add handlers
 app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
@@ -316,7 +418,11 @@ app.add_handler(CommandHandler("balance", balance_command))
 app.add_handler(CommandHandler("checkin", checkin_command))
 app.add_handler(CommandHandler("reading", reading_command))
 app.add_handler(CommandHandler("rockpaperscissors", rockpaperscissors_command))
+app.add_handler(CommandHandler("addbalance", add_balance_command))
+app.add_handler(CommandHandler("subbalance", sub_balance_command))
+app.add_handler(CommandHandler("setbalance", set_balance_command))
 app.add_handler(CallbackQueryHandler(bet_callback, pattern='^bet_'))
 app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
 
 app.run_polling()
+    
