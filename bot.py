@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 # Connect to PostgreSQL Database
 conn = psycopg2.connect(
-    dbname=os.getenv("koyebdb"),
-    user=os.getenv("koyeb-adm"),
-    password=os.getenv("WCAFr1R0muaZ"),
-    host=os.getenv("ep-shy-pine-a2e1ouuw.eu-central-1.pg.koyeb.app"),
-    port=os.getenv(5432)
+    dbname="koyebdb",
+    user="koyeb-adm",
+    password="WCAFr1R0muaZ",
+    host="ep-shy-pine-a2e1ouuw.eu-central-1.pg.koyeb.app",
+    port=5432
 )
 conn.autocommit = True
 cur = conn.cursor(cursor_factory=DictCursor)
