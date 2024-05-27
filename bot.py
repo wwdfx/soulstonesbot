@@ -2,11 +2,10 @@ import logging
 import psycopg2
 import random
 from psycopg2.extras import DictCursor
-from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler, JobQueue
-from datetime import datetime, timedelta, timezone
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
+from datetime import datetime, timedelta
 import asyncio
-import os
 
 # Set up basic logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -178,7 +177,7 @@ image_paths = {
     'loss': './lossStreak.png'
 }
 
-# Function to handle the /check-in command
+# Function to handle the /checkin command
 async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     today = datetime.now()
@@ -537,10 +536,15 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    data = query.data.split('_')
-    reward = int(data[1])
-    length = int(data[2])
-    mission_name = data[3]
+    mission_id = int(query.data.split('_')[1])
+
+    # Fetch mission details using mission_id
+    cur.execute('SELECT * FROM missions WHERE id = %s', (mission_id,))
+    mission = cur.fetchone()
+
+    if not mission:
+        await query.edit_message_text("Ошибка: миссия не найдена.")
+        return
 
     # Check if user has already attempted 3 missions today
     today = datetime.now().date()
@@ -561,13 +565,13 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Calculate mission end time
     start_time = datetime.now()
-    end_time = start_time + timedelta(hours=length)
+    end_time = start_time + timedelta(hours=mission['length'])
 
     # Insert mission into user_missions table
-    cur.execute('INSERT INTO user_missions (user_id, mission_id, start_time, end_time) VALUES (%s, %s, %s, %s)', (user_id, reward, start_time, end_time))
+    cur.execute('INSERT INTO user_missions (user_id, mission_id, start_time, end_time) VALUES (%s, %s, %s, %s)', (user_id, mission_id, start_time, end_time))
     conn.commit()
 
-    await query.edit_message_text(f"Вы отправили отряд на миссию: {mission_name}. Время завершения: {end_time.strftime('%Y-%m-%d %H:%M:%S')}.")
+    await query.edit_message_text(f"Вы отправили отряд на миссию: {mission['name']}. Время завершения: {end_time.strftime('%Y-%m-%d %H:%M:%S')}.")
 
 # Function to check for completed missions
 async def check_missions(context: ContextTypes.DEFAULT_TYPE):
@@ -577,7 +581,8 @@ async def check_missions(context: ContextTypes.DEFAULT_TYPE):
 
     for mission in completed_missions:
         user_id, mission_id = mission['user_id'], mission['mission_id']
-        reward = mission_id  # In this case, mission_id is used as the reward
+        cur.execute('SELECT reward FROM missions WHERE id = %s', (mission_id,))
+        reward = cur.fetchone()['reward']
         update_balance(user_id, reward)
         cur.execute('UPDATE user_missions SET completed = TRUE WHERE user_id = %s AND mission_id = %s', (user_id, mission_id))
         await context.bot.send_message(chat_id=user_id, text=f"Ваша миссия завершена! Вы получили {reward} Камней душ.")
@@ -610,6 +615,6 @@ app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
 app.add_handler(CallbackQueryHandler(mission_callback, pattern='^mission_'))
 
 job_queue = app.job_queue
-job_queue.run_repeating(check_missions, interval=60, first=10)
+job_queue.run_repeating(check_missions, interval=600, first=10)
 
 app.run_polling()
