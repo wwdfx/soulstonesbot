@@ -189,25 +189,26 @@ async def update_user_symbols(user_id, symbols_count):
     cur.execute('INSERT INTO user_symbols (user_id, symbols_count) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET symbols_count = user_symbols.symbols_count + %s', (user_id, symbols_count, symbols_count))
     conn.commit()
 
-# Function to determine user rank based on total symbols
-async def determine_user_rank(total_symbols):
-    if total_symbols < 5000:
-        return 'Смертный', 5
-    elif total_symbols < 20000:
-        return 'Новичок', 15
-    elif total_symbols < 50000:
-        return 'Новоприбывший Охотник', 30
-    elif total_symbols < 100000:
-        return 'Опытный охотник', 50
-    elif total_symbols < 250000:
-        return 'Лидер миссий Института', 85
-    elif total_symbols < 400000:
-        return 'Лидер Института', 135
-    elif total_symbols < 750000:
-        return 'Кандидат в Инквизиторы', 200
-    
+# Function to get user rank
+@reconnect_db
+async def get_user_rank(user_id):
+    symbols_count = await get_user_symbols(user_id)
+    if symbols_count < 5000:
+        return "Смертный"
+    elif symbols_count < 20000:
+        return "Новичок"
+    elif symbols_count < 50000:
+        return "Новоприбывший Охотник"
+    elif symbols_count < 100000:
+        return "Опытный охотник"
+    elif symbols_count < 250000:
+        return "Лидер миссий Института"
+    elif symbols_count < 400000:
+        return "ЛЛидер Института"
+    elif symbols_count < 250000:
+        return "Кандидат в Инквизиторы"
     else:
-        return 'Инквизитор', 300
+        return "Лидер Института"
 
 # Image paths
 image_paths = {
