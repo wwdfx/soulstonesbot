@@ -3,12 +3,12 @@ import psycopg2
 import random
 from psycopg2.extras import DictCursor
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler, JobQueue
 from datetime import datetime, timedelta
 import asyncio
 
 # Set up basic logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname=s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Connect to PostgreSQL Database
@@ -102,21 +102,6 @@ missions = [
 cur.executemany('INSERT INTO missions (name, rarity, appearing_rate, length, reward) VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING', missions)
 conn.commit()
 
-# Image paths
-image_paths = {
-    1: './check1.png',
-    2: './check2.png',
-    3: './check3.png',
-    4: './check4.png',
-    5: './check5.png',
-    6: './check6.png',
-    7: './check7.png',
-    'loss': './lossStreak.png'
-}
-
-# Conversation states
-PROMOTE_USER_ID = range(1)
-
 # Function to retrieve balance
 def get_balance(user_id):
     cur.execute('SELECT balance FROM balances WHERE user_id = %s', (user_id,))
@@ -158,19 +143,32 @@ def set_user_role(user_id, role):
     cur.execute('INSERT INTO users (user_id, role) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET role = %s', (user_id, role, role))
     conn.commit()
 
+# Image paths
+image_paths = {
+    1: './check1.png',
+    2: './check2.png',
+    3: './check3.png',
+    4: './check4.png',
+    5: './check5.png',
+    6: './check6.png',
+    7: './check7.png',
+    'loss': './lossStreak.png'
+}
+
 # Function to handle messages
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message_text = update.message.text
-    target_group_id = -1002142915618  # Adjust this ID to your target group
+    if update.message:
+        message_text = update.message.text
+        target_group_id = -1002142915618  # Adjust this ID to your target group
 
-    logger.info(f"Received message in group {update.message.chat_id}: {message_text[:50]}")
-    if len(message_text) >= 500 and update.message.chat_id == target_group_id:
-        user_id = update.message.from_user.id
-        user_mention = update.message.from_user.username or update.message.from_user.first_name
-        mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
+        logger.info(f"Received message in group {update.message.chat_id}: {message_text[:50]}")
+        if len(message_text) >= 500 and update.message.chat_id == target_group_id:
+            user_id = update.message.from_user.id
+            user_mention = update.message.from_user.username or update.message.from_user.first_name
+            mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
 
-        new_balance = update_balance(user_id, 5)
-        await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +5 к камням душ. Текущий баланс: {new_balance}💎.")
+            new_balance = update_balance(user_id, 5)
+            await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +5 к камням душ. Текущий баланс: {new_balance}💎.")
 
 # Function to handle /balance command
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -460,6 +458,9 @@ async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     new_balance = set_balance(int(target_user_id), amount)
     await update.message.reply_text(f"Баланс пользователя {target_user_id} установлен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
+
+# Conversation states
+PROMOTE_USER_ID = range(1)
 
 # Function to handle /promote command (super admin only)
 async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
