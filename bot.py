@@ -204,7 +204,7 @@ async def determine_user_rank(total_symbols):
     elif total_symbols < 400000:
         return 'Лидер Института', 135
     elif total_symbols < 750000:
-        return 'Лидер Института', 200
+        return 'Кандидат в Инквизиторы', 200
     
     else:
         return 'Инквизитор', 300
