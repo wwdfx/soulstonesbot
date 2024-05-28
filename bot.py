@@ -589,7 +589,7 @@ async def check_missions(context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
 # Initialize the bot and add handlers
-app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
+app = ApplicationBuilder().token("YOUR_BOT_TOKEN").build()
 
 # Conversation handler for promoting a user to admin
 conv_handler = ConversationHandler(
@@ -615,6 +615,6 @@ app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
 app.add_handler(CallbackQueryHandler(mission_callback, pattern='^mission_'))
 
 job_queue = app.job_queue
-job_queue.run_repeating(check_missions, interval=600, first=10)
+job_queue.run_repeating(check_missions, interval=6000, first=6000)
 
 app.run_polling()
