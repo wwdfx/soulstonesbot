@@ -589,7 +589,7 @@ async def check_missions(context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
 # Initialize the bot and add handlers
-app = ApplicationBuilder().token("YOUR_BOT_TOKEN").build()
+app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
 
 # Conversation handler for promoting a user to admin
 conv_handler = ConversationHandler(
