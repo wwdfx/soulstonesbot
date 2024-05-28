@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import asyncio
 
 # Set up basic logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname=s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Connect to PostgreSQL Database
@@ -615,6 +615,6 @@ app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
 app.add_handler(CallbackQueryHandler(mission_callback, pattern='^mission_'))
 
 job_queue = app.job_queue
-job_queue.run_repeating(check_missions, interval=6000, first=6000)
+job_queue.run_repeating(check_missions, interval=600, first=10)
 
 app.run_polling()
