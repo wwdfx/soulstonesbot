@@ -11,16 +11,36 @@ import asyncio
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Database connection details
+DB_DETAILS = {
+    "dbname": "koyebdb",
+    "user": "koyeb-adm",
+    "password": "WCAFr1R0muaZ",
+    "host": "ep-shy-pine-a2e1ouuw.eu-central-1.pg.koyeb.app",
+    "port": 5432
+}
+
 # Connect to PostgreSQL Database
-conn = psycopg2.connect(
-    dbname="koyebdb",
-    user="koyeb-adm",
-    password="WCAFr1R0muaZ",
-    host="ep-shy-pine-a2e1ouuw.eu-central-1.pg.koyeb.app",
-    port=5432
-)
-conn.autocommit = True
+def connect_db():
+    conn = psycopg2.connect(**DB_DETAILS)
+    conn.autocommit = True
+    return conn
+
+conn = connect_db()
 cur = conn.cursor(cursor_factory=DictCursor)
+
+# Function to handle reconnection
+def reconnect_db(func):
+    async def wrapper(*args, **kwargs):
+        global conn, cur
+        try:
+            return await func(*args, **kwargs)
+        except psycopg2.OperationalError:
+            conn.close()
+            conn = connect_db()
+            cur = conn.cursor(cursor_factory=DictCursor)
+            return await func(*args, **kwargs)
+    return wrapper
 
 # Create tables if they do not exist
 cur.execute('''
@@ -103,22 +123,25 @@ cur.executemany('INSERT INTO missions (name, rarity, appearing_rate, length, rew
 conn.commit()
 
 # Function to retrieve balance
-def get_balance(user_id):
+@reconnect_db
+async def get_balance(user_id):
     cur.execute('SELECT balance FROM balances WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
     return result['balance'] if result else 0
 
 # Function to update balance
-def update_balance(user_id, amount):
-    current_balance = get_balance(user_id)
+@reconnect_db
+async def update_balance(user_id, amount):
+    current_balance = await get_balance(user_id)
     new_balance = current_balance + amount
     cur.execute('INSERT INTO balances (user_id, balance) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET balance = %s', (user_id, new_balance, new_balance))
     conn.commit()
     return new_balance
 
 # Function to reduce balance
-def reduce_balance(user_id, amount):
-    current_balance = get_balance(user_id)
+@reconnect_db
+async def reduce_balance(user_id, amount):
+    current_balance = await get_balance(user_id)
     if current_balance < amount:
         return None  # Not enough balance
     new_balance = current_balance - amount
@@ -127,19 +150,22 @@ def reduce_balance(user_id, amount):
     return new_balance
 
 # Function to set balance
-def set_balance(user_id, amount):
+@reconnect_db
+async def set_balance(user_id, amount):
     cur.execute('INSERT INTO balances (user_id, balance) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET balance = %s', (user_id, amount, amount))
     conn.commit()
     return amount
 
 # Function to get user role
-def get_user_role(user_id):
+@reconnect_db
+async def get_user_role(user_id):
     cur.execute('SELECT role FROM users WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
     return result['role'] if result else 'user'
 
 # Function to set user role
-def set_user_role(user_id, role):
+@reconnect_db
+async def set_user_role(user_id, role):
     cur.execute('INSERT INTO users (user_id, role) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET role = %s', (user_id, role, role))
     conn.commit()
 
@@ -167,7 +193,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_mention = update.message.from_user.username or update.message.from_user.first_name
             mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
 
-            new_balance = update_balance(user_id, 5)
+            new_balance = await update_balance(user_id, 5)
             await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +5 к камням душ. Текущий баланс: {new_balance}💎.")
 
 # Function to handle /balance command
@@ -175,10 +201,11 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_mention = update.message.from_user.username or update.message.from_user.first_name
     mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
-    balance = get_balance(user_id)
+    balance = await get_balance(user_id)
     await update.message.reply_text(f"💎 {mention_text}, ваш текущий баланс: {balance}💎.")
 
 # Function to handle the /checkin command
+@reconnect_db
 async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     today = datetime.now()
@@ -216,7 +243,7 @@ async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.execute('INSERT INTO checkin_streak (user_id, streak, last_checkin) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET streak = %s, last_checkin = %s', (user_id, streak, today, streak, today))
     conn.commit()
 
-    new_balance = update_balance(user_id, reward)
+    new_balance = await update_balance(user_id, reward)
 
     user_mention = update.message.from_user.username or update.message.from_user.first_name
     mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
@@ -285,13 +312,14 @@ readings = [
 ]
 
 # Function to handle the /reading command
+@reconnect_db
 async def reading_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if not can_request_reading(user_id):
+    if not await can_request_reading(user_id):
         await update.message.reply_text("Вы уже запросили гадание сегодня. Повторите попытку завтра.")
         return
 
-    if reduce_balance(user_id, 50) is None:
+    if await reduce_balance(user_id, 50) is None:
         await update.message.reply_text("Недостаточно Камней Душ для запроса гадания.")
         return
 
@@ -302,7 +330,8 @@ async def reading_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(photo=open('./reading.png', 'rb'), caption=f"Ваше гадание на сегодня:\n\n{reading}")
 
 # Function to check and update last reading request time
-def can_request_reading(user_id):
+@reconnect_db
+async def can_request_reading(user_id):
     cur.execute('SELECT last_request FROM last_reading WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
     if result:
@@ -314,6 +343,7 @@ def can_request_reading(user_id):
     return True
 
 # Function to handle the /rockpaperscissors command
+@reconnect_db
 async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     cur.execute('SELECT last_play FROM last_game WHERE user_id = %s', (user_id,))
@@ -336,12 +366,13 @@ async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAUL
     keyboard = InlineKeyboardMarkup.from_column(buttons)
     await update.message.reply_text("Выберите количество Камней душ, которые вы хотите поставить:", reply_markup=keyboard)
 
+@reconnect_db
 async def bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     bet = int(query.data.split('_')[1])
-    balance = get_balance(user_id)
+    balance = await get_balance(user_id)
 
     if balance < bet:
         await query.edit_message_text("У вас недостаточно Камней душ для этой ставки.")
@@ -355,6 +386,7 @@ async def bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup.from_row(buttons)
     await query.edit_message_text("Выберите, что вы хотите выбросить:", reply_markup=keyboard)
 
+@reconnect_db
 async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -379,13 +411,13 @@ async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = outcomes.get((user_choice, bot_choice))
 
     if result == "win":
-        new_balance = update_balance(user_id, bet)
+        new_balance = await update_balance(user_id, bet)
         await query.edit_message_text(f"Поздравляем! Вы выиграли {bet} Камней душ. Ваш текущий баланс: {new_balance}💎.")
     elif result == "lose":
-        new_balance = update_balance(user_id, -bet)
+        new_balance = await update_balance(user_id, -bet)
         await query.edit_message_text(f"Вы проиграли {bet} Камней душ. Ваш текущий баланс: {new_balance}💎.")
     else:
-        await query.edit_message_text(f"Ничья! Ваш баланс остался прежним: {get_balance(user_id)}💎.")
+        await query.edit_message_text(f"Ничья! Ваш баланс остался прежним: {await get_balance(user_id)}💎.")
 
     # Update the last play time
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -393,9 +425,10 @@ async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
 # Function to handle /addbalance command (admin only)
+@reconnect_db
 async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if get_user_role(user_id) != 'admin':
+    if await get_user_role(user_id) != 'admin':
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
@@ -410,13 +443,14 @@ async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Пожалуйста, введите корректное число.")
         return
 
-    new_balance = update_balance(int(target_user_id), amount)
+    new_balance = await update_balance(int(target_user_id), amount)
     await update.message.reply_text(f"Баланс пользователя {target_user_id} увеличен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
 
 # Function to handle /subbalance command (admin only)
+@reconnect_db
 async def sub_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if get_user_role(user_id) != 'admin':
+    if await get_user_role(user_id) != 'admin':
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
@@ -431,7 +465,7 @@ async def sub_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Пожалуйста, введите корректное число.")
         return
 
-    new_balance = reduce_balance(int(target_user_id), amount)
+    new_balance = await reduce_balance(int(target_user_id), amount)
     if new_balance is None:
         await update.message.reply_text("Недостаточно Камней душ для выполнения операции.")
         return
@@ -439,9 +473,10 @@ async def sub_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(f"Баланс пользователя {target_user_id} уменьшен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
 
 # Function to handle /setbalance command (admin only)
+@reconnect_db
 async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if get_user_role(user_id) != 'admin':
+    if await get_user_role(user_id) != 'admin':
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
@@ -456,13 +491,14 @@ async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Пожалуйста, введите корректное число.")
         return
 
-    new_balance = set_balance(int(target_user_id), amount)
+    new_balance = await set_balance(int(target_user_id), amount)
     await update.message.reply_text(f"Баланс пользователя {target_user_id} установлен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
 
 # Conversation states
 PROMOTE_USER_ID = range(1)
 
 # Function to handle /promote command (super admin only)
+@reconnect_db
 async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     super_admin_id = 6505061807  # Replace with your actual super admin ID
     user_id = update.message.from_user.id
@@ -475,6 +511,7 @@ async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return PROMOTE_USER_ID
 
 # Function to receive the user ID to promote
+@reconnect_db
 async def receive_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target_user_id = int(update.message.text)
@@ -482,7 +519,7 @@ async def receive_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пожалуйста, введите корректное число.")
         return PROMOTE_USER_ID
 
-    set_user_role(target_user_id, 'admin')
+    await set_user_role(target_user_id, 'admin')
     await update.message.reply_text(f"Пользователь {target_user_id} повышен до администратора.")
     return ConversationHandler.END
 
@@ -492,6 +529,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # Function to generate random missions
+@reconnect_db
 def generate_missions():
     missions = []
     cur.execute('SELECT * FROM missions')
@@ -504,6 +542,7 @@ def generate_missions():
     return missions
 
 # Function to handle the /missions command
+@reconnect_db
 async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     today = datetime.now().date()
@@ -532,6 +571,7 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚔️ Выберите миссию для отправки отряда:", reply_markup=keyboard)
 
 # Callback function for mission buttons
+@reconnect_db
 async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -574,6 +614,7 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"💼 Вы отправили отряд на миссию: ✨{mission['name']}✨.  🌒 Время завершения: ⌛️ {end_time.strftime('%Y-%m-%d %H:%M:%S')} ⌛️.")
 
 # Function to check for completed missions
+@reconnect_db
 async def check_missions(context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now()
     cur.execute('SELECT user_id, mission_id FROM user_missions WHERE completed = FALSE AND end_time <= %s', (now,))
@@ -583,13 +624,13 @@ async def check_missions(context: ContextTypes.DEFAULT_TYPE):
         user_id, mission_id = mission['user_id'], mission['mission_id']
         cur.execute('SELECT reward FROM missions WHERE id = %s', (mission_id,))
         reward = cur.fetchone()['reward']
-        update_balance(user_id, reward)
+        await update_balance(user_id, reward)
         cur.execute('UPDATE user_missions SET completed = TRUE WHERE user_id = %s AND mission_id = %s', (user_id, mission_id))
         await context.bot.send_message(chat_id=user_id, text=f"✅ Ваша миссия завершена! ✅ Вы получили {reward} 💎 Камней душ.")
     conn.commit()
 
 # Initialize the bot and add handlers
-app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
+app = ApplicationBuilder().token("YOUR_BOT_TOKEN").build()
 
 # Conversation handler for promoting a user to admin
 conv_handler = ConversationHandler(
@@ -615,6 +656,6 @@ app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
 app.add_handler(CallbackQueryHandler(mission_callback, pattern='^mission_'))
 
 job_queue = app.job_queue
-job_queue.run_repeating(check_missions, interval=600, first=10)
+job_queue.run_repeating(check_missions, interval=6000, first=6000)
 
 app.run_polling()
