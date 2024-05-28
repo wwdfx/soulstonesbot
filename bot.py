@@ -113,7 +113,7 @@ cur.execute('''
 cur.execute('''
     CREATE TABLE IF NOT EXISTS user_symbols (
         user_id BIGINT PRIMARY KEY,
-        total_symbols INTEGER DEFAULT 0
+        symbols_count INTEGER DEFAULT 0
     )
 ''')
 
@@ -176,21 +176,18 @@ async def set_user_role(user_id, role):
     cur.execute('INSERT INTO users (user_id, role) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET role = %s', (user_id, role, role))
     conn.commit()
 
-# Function to get user total symbols
+# Function to get user symbols count
 @reconnect_db
 async def get_user_symbols(user_id):
-    cur.execute('SELECT total_symbols FROM user_symbols WHERE user_id = %s', (user_id,))
+    cur.execute('SELECT symbols_count FROM user_symbols WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
-    return result['total_symbols'] if result else 0
+    return result['symbols_count'] if result else 0
 
-# Function to update user total symbols
+# Function to update user symbols count
 @reconnect_db
 async def update_user_symbols(user_id, symbols_count):
-    current_symbols = await get_user_symbols(user_id)
-    new_symbols = current_symbols + symbols_count
-    cur.execute('INSERT INTO user_symbols (user_id, total_symbols) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET total_symbols = %s', (user_id, new_symbols, new_symbols))
+    cur.execute('INSERT INTO user_symbols (user_id, symbols_count) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET symbols_count = user_symbols.symbols_count + %s', (user_id, symbols_count, symbols_count))
     conn.commit()
-    return new_symbols
 
 # Function to determine user rank based on total symbols
 async def determine_user_rank(total_symbols):
@@ -225,6 +222,7 @@ image_paths = {
 }
 
 # Function to handle messages
+@reconnect_db
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         message_text = update.message.text
@@ -233,25 +231,27 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Received message in group {update.message.chat_id}: {message_text[:50]}")
         if update.message.chat_id == target_group_id:
             user_id = update.message.from_user.id
-            await update_user_symbols(user_id, len(message_text))
+            symbols_count = len(message_text)
+            await update_user_symbols(user_id, symbols_count)
+            
             if len(message_text) >= 500:
-                user_mention = update.message.from_user.username or update.message.from_user.first_name
-                mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
-
                 user_rank = await get_user_rank(user_id)
-                reward_mapping = {
+                soulstones_rewards = {
                     "Mundane": 5,
                     "Newcomer": 15,
                     "Novice Shadowhunter": 30,
                     "Experienced Shadowhunter": 50,
-                    "Missions Leader": 85,
+                    "Missions Leader": 135,
                     "Institute Leader": 200
                 }
-                reward = reward_mapping.get(user_rank, 5)
+                reward = soulstones_rewards[user_rank]
+                user_mention = update.message.from_user.username or update.message.from_user.first_name
+                mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
                 new_balance = await update_balance(user_id, reward)
                 await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +{reward} к камням душ. Текущий баланс: {new_balance}💎.")
 
 # Function to handle /balance command
+@reconnect_db
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_mention = update.effective_user.username or update.effective_user.first_name
@@ -260,12 +260,20 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"💎 {mention_text}, ваш текущий баланс: {balance}💎.")
 
 # Function to handle /profile command
+@reconnect_db
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_mention = update.effective_user.username or update.effective_user.first_name
+    mention_text = f"@{user_mention}" if update.effective_user.username else user_mention
     user_rank = await get_user_rank(user_id)
     user_balance = await get_balance(user_id)
     total_symbols = await get_user_symbols(user_id)
+
+    profile_text = (f"Профиль {mention_text}:\n"
+                    f"Ранк: {user_rank}.\n"
+                    f"Баланс Камней душ: {user_balance}.\n"
+                    f"Символов в рп-чате: {total_symbols}.")
+
     buttons = [
         [InlineKeyboardButton("Баланс", callback_data='/balance')],
         [InlineKeyboardButton("Предсказание от Магнуса", callback_data='/reading')],
@@ -273,9 +281,9 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Камень-ножницы-бумага", callback_data='/rockpaperscissors')],
         [InlineKeyboardButton("Миссии", callback_data='/missions')]
     ]
-    reply_markup = InlineKeyboardMarkup(buttons)
-    profile_text = f"Профиль @{user_mention}:\nРанк: {user_rank}\nБаланс Камней душ: {user_balance}\nСимволов в рп-чате: {total_symbols}"
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=profile_text, reply_markup=reply_markup)
+    keyboard = InlineKeyboardMarkup(buttons)
+
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=profile_text, reply_markup=keyboard)
 
 # Function to handle the /checkin command
 @reconnect_db
@@ -436,7 +444,7 @@ async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAUL
         InlineKeyboardButton("200", callback_data="bet_200"),
         InlineKeyboardButton("500", callback_data="bet_500")
     ]
-    keyboard = InlineKeyboardMarkup(buttons)
+    keyboard = InlineKeyboardMarkup.from_column(buttons)
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Выберите количество Камней душ, которые вы хотите поставить:", reply_markup=keyboard)
 
 @reconnect_db
@@ -456,7 +464,7 @@ async def bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("📄", callback_data=f"play_{bet}_paper"),
         InlineKeyboardButton("✂️", callback_data=f"play_{bet}_scissors")
     ]
-    keyboard = InlineKeyboardMarkup(buttons)
+    keyboard = InlineKeyboardMarkup.from_row(buttons)
     await query.edit_message_text("Выберите, что вы хотите выбросить:", reply_markup=keyboard)
 
 @reconnect_db
@@ -640,7 +648,7 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         for mission in missions
     ]
-    keyboard = InlineKeyboardMarkup(buttons)
+    keyboard = InlineKeyboardMarkup.from_column(buttons)
     await context.bot.send_message(chat_id=update.effective_chat.id, text="⚔️ Выберите миссию для отправки отряда:", reply_markup=keyboard)
 
 # Callback function for mission buttons
@@ -703,7 +711,7 @@ async def check_missions(context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
 # Initialize the bot and add handlers
-app = ApplicationBuilder().token("7175746196:AAHckVjmat7IBpqvzWfTxvUzvQR1_1FgLiw").build()
+app = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
 
 # Conversation handler for promoting a user to admin
 conv_handler = ConversationHandler(
@@ -728,11 +736,11 @@ app.add_handler(conv_handler)
 app.add_handler(CallbackQueryHandler(bet_callback, pattern='^bet_'))
 app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
 app.add_handler(CallbackQueryHandler(mission_callback, pattern='^mission_'))
-app.add_handler(CallbackQueryHandler(balance_command, pattern='^/balance'))
-app.add_handler(CallbackQueryHandler(reading_command, pattern='^/reading'))
-app.add_handler(CallbackQueryHandler(checkin_command, pattern='^/checkin'))
-app.add_handler(CallbackQueryHandler(rockpaperscissors_command, pattern='^/rockpaperscissors'))
-app.add_handler(CallbackQueryHandler(missions_command, pattern='^/missions'))
+app.add_handler(CallbackQueryHandler(balance_command, pattern='/balance'))
+app.add_handler(CallbackQueryHandler(reading_command, pattern='/reading'))
+app.add_handler(CallbackQueryHandler(checkin_command, pattern='/checkin'))
+app.add_handler(CallbackQueryHandler(rockpaperscissors_command, pattern='/rockpaperscissors'))
+app.add_handler(CallbackQueryHandler(missions_command, pattern='/missions'))
 
 job_queue = app.job_queue
 job_queue.run_repeating(check_missions, interval=6000, first=6000)
