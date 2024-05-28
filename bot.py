@@ -110,6 +110,13 @@ cur.execute('''
     )
 ''')
 
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS user_symbols (
+        user_id BIGINT PRIMARY KEY,
+        total_symbols INTEGER NOT NULL DEFAULT 0
+    )
+''')
+
 # Populate the missions table with 25 different missions
 missions = [
     ('Патрулировать нижний Бруклин', 'Сложность: 1', 50, 2, 150),
@@ -169,6 +176,37 @@ async def set_user_role(user_id, role):
     cur.execute('INSERT INTO users (user_id, role) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET role = %s', (user_id, role, role))
     conn.commit()
 
+# Function to get user total symbols
+@reconnect_db
+async def get_total_symbols(user_id):
+    cur.execute('SELECT total_symbols FROM user_symbols WHERE user_id = %s', (user_id,))
+    result = cur.fetchone()
+    return result['total_symbols'] if result else 0
+
+# Function to update user total symbols
+@reconnect_db
+async def update_total_symbols(user_id, symbols):
+    current_symbols = await get_total_symbols(user_id)
+    new_symbols = current_symbols + symbols
+    cur.execute('INSERT INTO user_symbols (user_id, total_symbols) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET total_symbols = %s', (user_id, new_symbols, new_symbols))
+    conn.commit()
+
+# Function to determine user rank based on total symbols
+async def get_user_rank(user_id):
+    total_symbols = await get_total_symbols(user_id)
+    if total_symbols < 5000:
+        return "Смертный", 5
+    elif total_symbols < 20000:
+        return "Новичок", 15
+    elif total_symbols < 50000:
+        return "Новый Охотник", 30
+    elif total_symbols < 100000:
+        return "Опытный Охотник", 50
+    elif total_symbols < 250000:
+        return "Лидер миссий", 85
+    else:
+        return "Глава Института", 200
+
 # Image paths
 image_paths = {
     1: './check1.png',
@@ -193,8 +231,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_mention = update.message.from_user.username or update.message.from_user.first_name
             mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
 
-            new_balance = await update_balance(user_id, 5)
-            await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +5 к камням душ. Текущий баланс: {new_balance}💎.")
+            # Update total symbols
+            symbols_count = len(message_text)
+            await update_total_symbols(user_id, symbols_count)
+
+            # Get user rank and reward
+            rank, reward = await get_user_rank(user_id)
+            new_balance = await update_balance(user_id, reward)
+
+            await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +{reward} к камням душ. Текущий баланс: {new_balance}💎.\nВаш текущий ранг: {rank}")
 
 # Function to handle /balance command
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
