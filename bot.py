@@ -192,17 +192,22 @@ async def update_total_symbols(user_id, symbols_count):
 # Function to determine user rank based on total symbols
 async def determine_user_rank(total_symbols):
     if total_symbols < 5000:
-        return 'Mundane', 5
+        return 'Смертный', 5
     elif total_symbols < 20000:
-        return 'Newcomer', 15
+        return 'Новичок', 15
     elif total_symbols < 50000:
-        return 'Novice Shadowhunter', 30
+        return 'Новоприбывший Охотник', 30
     elif total_symbols < 100000:
-        return 'Experienced Shadowhunter', 50
+        return 'Опытный охотник', 50
     elif total_symbols < 250000:
-        return 'Missions Leader', 85
+        return 'Лидер миссий Института', 85
+    elif total_symbols < 400000:
+        return 'Лидер Института', 135
+    elif total_symbols < 750000:
+        return 'Лидер Института', 200
+    
     else:
-        return 'Institute Leader', 200
+        return 'Инквизитор', 300
 
 # Image paths
 image_paths = {
