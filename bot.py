@@ -672,7 +672,7 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.execute('INSERT INTO mission_attempts (user_id, date, attempts) VALUES (%s, %s, 1)', (user_id, today))
     conn.commit()
 
-    # Calculate mission end time
+    # #Calculate mission end time
     start_time = datetime.now()
     end_time = start_time + timedelta(hours=mission['length'])
 
